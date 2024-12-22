@@ -96,8 +96,8 @@ def main(args):
     random.seed(42)
 
     # device
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # device = torch.device("cpu")
 
     # load dataset
     train_loader = dataset_loader[args.dataset].get_train_loader(

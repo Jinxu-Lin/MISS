@@ -115,7 +115,7 @@ def main(args):
     
     # model evaluation for gradient computation
     model.to(device)
-    model.eval()
+    model.train()
 
     for batch_idx, batch in enumerate(train_loader):
         print("batch_idx: ", batch_idx)

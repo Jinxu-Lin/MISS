@@ -21,6 +21,7 @@ def get_train_loader(
             'cifar10',
             split="train"
         )
+        dataset.save_to_disk("./Dataset/CIFAR10")
 
     # data augmentation
     augmentations = transforms.Compose([
@@ -34,19 +35,23 @@ def get_train_loader(
         )
 
     ])
-
-    def transform_images(examples):
-        images = [augmentations(image.convert("RGB")) for image in examples["img"]]
-        labels = examples["label"]
-        return {"input": images, "label": labels}
-
-    if args.data_aug:
-        dataset.set_transform(transform_images)
-    
+        
     # select CIFAR-2
     with open(args.train_index_path, 'rb') as handle:
         sub_idx = pickle.load(handle)
     dataset = dataset.select(sub_idx)
+
+    def transform_images(examples):
+        images = [augmentations(image.convert("RGB")) for image in examples["img"]]
+        labels = examples["label"]
+        # Add label conversion here
+        label_map = {3: 0, 5: 1}
+        labels = [label_map[label] for label in labels]
+        return {"input": images, "label": labels}
+
+
+    if args.data_aug:
+        dataset.set_transform(transform_images)
 
     # dataloader
     train_dataloader = torch.utils.data.DataLoader(
@@ -74,6 +79,11 @@ def get_test_loader(
             split="test",
         )
 
+    # select CIFAR-2
+    with open(args.test_index_path, 'rb') as handle:
+        sub_idx = pickle.load(handle)
+    dataset = dataset.select(sub_idx)
+
     # data augmentation
     augmentations = transforms.Compose([
         transforms.ToTensor(),
@@ -85,17 +95,14 @@ def get_test_loader(
 
     def transform_images(examples):
         images = [augmentations(image.convert("RGB")) for image in examples["img"]]
-        return {"input": images}
+        labels = examples["label"]
+        # Add label conversion here
+        label_map = {3: 0, 5: 1}
+        labels = [label_map[label] for label in labels]
+        return {"input": images, "label": labels}
 
     if args.data_aug:
         dataset.set_transform(transform_images)
-
-    # select CIFAR-2
-    # with open(args.test_index_path, 'rb') as handle:
-    #     sub_idx = pickle.load(handle)
-    # dataset = dataset.select(sub_idx)
-    # select label 3 and 5
-    # dataset = dataset.filter(lambda x: x["label"] in [3, 5])
 
     test_dataloader = torch.utils.data.DataLoader(
         dataset,
