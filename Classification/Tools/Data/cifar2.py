@@ -21,7 +21,7 @@ def get_train_loader(
             'cifar10',
             split="train"
         )
-        dataset.save_to_disk("./Dataset/CIFAR10")
+        dataset.save_to_disk("../Dataset/CIFAR10/train")
 
     # data augmentation
     augmentations = transforms.Compose([
@@ -77,6 +77,7 @@ def get_test_loader(
         dataset = load_dataset(
             'cifar10',
             split="test",
+            
         )
 
     # select CIFAR-2
