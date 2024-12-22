@@ -1,0 +1,22 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "C-train",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./Classification/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--load-dataset",
+                "--dataset-dir", "/home/jinxulin/MISS/Dataset/CIFAR10",
+                "--dataset", "cifar2",
+                "--train-index-path", "/home/jinxulin/MISS/Classification/data/train_index.pkl",
+                "--test-index-path", "/home/jinxulin/MISS/Classification/data/test_index.pkl"
+            ]
+        }
+    ]
+}
