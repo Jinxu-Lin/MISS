@@ -38,19 +38,14 @@ models = {
 }
 
 
+def set_seed(seed):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
+
 def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-def compute_f(model, params, buffers, inputs, labels):
-    inputs = inputs.unsqueeze(0)
-    labels = labels.unsqueeze(0)
-   
-    predictions = functional_call(model, (params, buffers), args=inputs)
-    ####
-    f = torch.nn.CrossEntropyLoss()(predictions.float(), labels.float())
-    ####
-    return f  
+    return sum(p.numel() for p in model.parameters() if p.requires_grad) 
 
 
 def vectorize_and_ignore_buffers(g, params_dict=None):
@@ -77,6 +72,10 @@ def parseArgs():
         description="Image Classification Training",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     
+    # Seed
+    parser.add_argument("--seed", type=int, default=42,
+                        dest="seed", help='random seed')
+    
     # Dataset
     parser.add_argument("--dataset", type=str, default='cifar2',
                         dest="dataset", help='dataset to train on')
@@ -84,10 +83,12 @@ def parseArgs():
                         dest="load_dataset", help='load local dataset')
     parser.add_argument("--dataset-dir", type=str, default=None,
                         dest="dataset_dir", help='dataset directory')
+    parser.add_argument("--dataset-split", type=str, default='train',
+                        dest="dataset_split", help='dataset split')
     parser.add_argument("--train-index-path", type=str, default=None,
-                        dest="train_index_path", help='index path')
+                        dest="train_index_path", help='train index path')
     parser.add_argument("--test-index-path", type=str, default=None,
-                        dest="test_index_path", help='index path')
+                        dest="test_index_path", help='test index path')
     parser.add_argument("--data-aug", action="store_true", default=True,
                         dest="data_aug", help='data augmentation')
     parser.add_argument("--resolution", type=int, default=32,
@@ -96,16 +97,16 @@ def parseArgs():
                         dest="center_crop", help='center crop the dataset')
     parser.add_argument("--random-flip", action="store_true", default=False,
                         dest="random_flip", help='random flip the dataset')
-    parser.add_argument("--train-batch-size", type=int, default=64, 
-                        dest="train_batch_size", help="Batch size (per device) for the training dataloader.")
-    parser.add_argument("--test-batch-size", type=int, default=256, 
-                        dest="test_batch_size", help="Batch size (per device) for the test dataloader.")
+    parser.add_argument("--batch-size", type=int, default=16, 
+                        dest="batch_size", help="Batch size (per device) for the dataloader.")
     parser.add_argument("--dataloader-num-workers", type=int, default=0,
                         dest="dataloader_num_workers", help="The number of subprocesses to use for data loading. 0 means that the data will be loaded in the main process.")
     
     # Model
     parser.add_argument("--model", type=str, default='resnet9',
                         dest="model", help='model to train on')
+    parser.add_argument("--model-dir", type=str, default='./saved/models',
+                        dest="model_dir", help='model directory')
     parser.add_argument("--model-name", type=str, default='model_10.pth',
                         dest="model_name", help='model name')
     
@@ -119,16 +120,13 @@ def parseArgs():
 def main(args):
 
     # seed
-    torch.manual_seed(42)
-    np.random.seed(42)
-    random.seed(42)
+    set_seed(args.seed)
 
     # device
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # load dataset
-    if 'idx-train.pkl' in args.index_path:
+    if args.dataset_split == 'train':
         loader = dataset_loader[args.dataset].get_train_loader(
             args,
         )
@@ -140,28 +138,38 @@ def main(args):
     # load model
     num_classes = dataset_num_classes[args.dataset]
     model = models[args.model](num_classes=num_classes)
-    model.load_state_dict(f'./models/{args.model_name}')
+    model_path = os.path.join(args.model_dir, args.model_name)
+    model.load_state_dict(torch.load(model_path))
 
-    # initialize projector
-    projector = CudaProjector(
-        grad_dim=count_parameters(model), 
-        proj_dim=args.dim,
-        seed=42, 
-        proj_type=ProjectionType.normal,
-        device='cuda:0'
-    )
+    model.to(device)
+    model.eval()
 
     # get params and buffers
     params = {k: v.detach() for k, v in model.named_parameters() if v.requires_grad==True}
     buffers = {k: v.detach() for k, v in model.named_buffers() if v.requires_grad==True}
 
+    # initialize projector
+    projector = CudaProjector(
+        grad_dim=count_parameters(model), 
+        proj_dim=args.dim,
+        seed=args.seed, 
+        proj_type=ProjectionType.normal,
+        device=device,
+        max_batch_size=args.batch_size
+    )
+
     # Initialize save np array
-    if 'idx-train.pkl' in args.index_path:
-        filename = os.path.join('./saved/grad/train-grad-{}-{}-{}.npy'.format(
-            args.model, args.model_name, args.dim
+    if args.dataset_split == 'train':
+        filename = os.path.join('{}/train-grad-{}-{}-{}.npy'.format(
+            args.save_dir, args.model, args.model_name, args.dim
+        ))
+    else:
+        filename = os.path.join('{}/test-grad-{}-{}-{}.npy'.format(
+            args.save_dir, args.model, args.model_name, args.dim
         ))
     os.makedirs(os.path.dirname(filename), exist_ok=True)
 
+    # TODO: test store shape not defined
     dstore_keys = np.memmap(filename, 
                             dtype=np.float32, 
                             mode='w+', 
@@ -169,22 +177,40 @@ def main(args):
     
     
     # model evaluation for gradient computation
-    model.to(device)
-    model.train()
+    # define model output function
+    def compute_f(params, buffers, inputs, labels):
+        inputs = inputs.unsqueeze(0)
+        labels = labels.unsqueeze(0)
+    
+        predictions = functional_call(model, (params, buffers), args=inputs)
+        ####
+        f = torch.nn.CrossEntropyLoss()(predictions, labels)
+        ####
+        return f 
+
 
     ft_compute_grad = grad(compute_f)
-    ft_compute_sample_grad = vmap(ft_compute_grad, 
-                              in_dims=(None, None, 0, 0, 0, 
-                                       ),
-                             )
+    ft_compute_sample_grad = vmap(
+        ft_compute_grad, 
+        in_dims=(None, None, 0, 0)
+    )
 
     for batch_idx, batch in enumerate(loader):
         print("batch_idx: ", batch_idx)
         inputs, labels = batch["input"].to(device), batch["label"].to(device)
 
-        ft_per_sample_grads = ft_compute_sample_grad(model, params, buffers, inputs, labels)
+        # compute gradient
+        ft_per_sample_grads = ft_compute_sample_grad(params, buffers, inputs, labels)
         ft_per_sample_grads = vectorize_and_ignore_buffers(list(ft_per_sample_grads.values()))
 
+        # project gradient
+        ft_per_sample_grads = projector.project(ft_per_sample_grads, model_id=0)
+
+        # save gradient
+        index_start = batch_idx * args.batch_size
+        index_end = index_start + args.batch_size
+        while (np.abs(dstore_keys[index_start:index_end, 0:32]).sum()==0):
+            dstore_keys[index_start:index_end] = ft_per_sample_grads.detach().cpu().numpy()
 
 
 if __name__ == "__main__":

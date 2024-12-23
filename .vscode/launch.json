@@ -14,9 +14,27 @@
                 "--load-dataset",
                 "--dataset-dir", "/home/jinxulin/MISS/Dataset/CIFAR10",
                 "--dataset", "cifar2",
-                "--train-index-path", "/home/jinxulin/MISS/Classification/data/train_index.pkl",
+                "--train-index-path", "/home/jinxulin/MISS/Classification/data/idx-train.pkl",
                 "--test-index-path", "/home/jinxulin/MISS/Classification/data/test_index.pkl"
             ]
+        },
+        {
+            "name": "C-grad",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./Classification/grad.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--load-dataset",
+                "--dataset-dir", "/home/jinxulin/MISS/Dataset/CIFAR10",
+                "--dataset", "cifar2",
+                "--dataset-split", "train",
+                "--train-index-path", "/home/jinxulin/MISS/Classification/data/idx-train.pkl",
+                "--model", "resnet9",
+                "--model-dir", "/home/jinxulin/MISS/Classification/saved/models",
+                "--model-name", "model_24.pth",
+            ]
         }
+
     ]
 }
