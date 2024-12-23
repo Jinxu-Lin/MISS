@@ -114,6 +114,10 @@ def parseArgs():
     parser.add_argument("--dim", type=int, default=4096,
                         dest="dim", help='dimension of the projector')
     
+    # Save Dir
+    parser.add_argument("--save-dir", type=str, default='./saved/grad',
+                        dest="save_dir", help='save directory')
+    
     return parser.parse_args()
 
 
@@ -160,12 +164,12 @@ def main(args):
 
     # Initialize save np array
     if args.dataset_split == 'train':
-        filename = os.path.join('{}/train-grad-{}-{}-{}.npy'.format(
-            args.save_dir, args.model, args.model_name, args.dim
+        filename = os.path.join('{}/{}/train-grad-{}-{}-{}.npy'.format(
+            args.save_dir, args.dataset, args.model, args.model_name, args.dim
         ))
     else:
-        filename = os.path.join('{}/test-grad-{}-{}-{}.npy'.format(
-            args.save_dir, args.model, args.model_name, args.dim
+        filename = os.path.join('{}/{}/test-grad-{}-{}-{}.npy'.format(
+            args.save_dir, args.dataset, args.model, args.model_name, args.dim
         ))
     os.makedirs(os.path.dirname(filename), exist_ok=True)
 

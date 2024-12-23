@@ -13,7 +13,7 @@
             "args": [
                 "--load-dataset",
                 "--dataset-dir", "/home/jinxulin/MISS/Dataset/CIFAR10",
-                "--dataset", "cifar2",
+                "--dataset", "cifar10",
                 "--train-index-path", "/home/jinxulin/MISS/Classification/data/idx-train.pkl",
                 "--test-index-path", "/home/jinxulin/MISS/Classification/data/test_index.pkl"
             ]
@@ -27,12 +27,13 @@
             "args": [
                 "--load-dataset",
                 "--dataset-dir", "/home/jinxulin/MISS/Dataset/CIFAR10",
-                "--dataset", "cifar2",
+                "--dataset", "cifar10",
                 "--dataset-split", "train",
                 "--train-index-path", "/home/jinxulin/MISS/Classification/data/idx-train.pkl",
                 "--model", "resnet9",
-                "--model-dir", "/home/jinxulin/MISS/Classification/saved/models",
+                "--model-dir", "/home/jinxulin/MISS/Classification/saved/models/cifar10",
                 "--model-name", "model_24.pth",
+                "--save-dir", "/home/jinxulin/MISS/Classification/saved/grad"
             ]
         }
 

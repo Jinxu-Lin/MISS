@@ -46,7 +46,7 @@ def get_train_loader(
     # dataloader
     train_dataloader = torch.utils.data.DataLoader(
         dataset,
-        batch_size=args.train_batch_size,
+        batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.dataloader_num_workers
     )

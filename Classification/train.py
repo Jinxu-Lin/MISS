@@ -67,7 +67,7 @@ def parseArgs():
     # Optimiser
     parser.add_argument("--optimiser", type=str, default="sgd",
                         dest="optimiser", help="Optimiser to use")
-    parser.add_argument("--learning-rate", type=float, default=0.4,
+    parser.add_argument("--learning-rate", type=float, default=0.5,
                         dest="learning_rate", help="Learning rate")
     parser.add_argument("--momentum", type=float, default=0.9,
                         dest="momentum", help="Momentum")
@@ -85,6 +85,10 @@ def parseArgs():
     # Train
     parser.add_argument("--epochs", type=int, default=24,
                         dest="epochs", help="Number of epochs to train for")
+    
+    # Save
+    parser.add_argument("--save-dir", type=str, default='./saved',
+                        dest="save_dir", help='save directory')
 
     return parser.parse_args()
 
@@ -144,7 +148,7 @@ def main(args):
     model.train()
 
     # create models dir
-    os.makedirs("./models", exist_ok=True)
+    os.makedirs(f"{args.save_dir}/models/{args.dataset}", exist_ok=True)
 
     for epoch in range(args.epochs):
         for batch_idx, batch in enumerate(train_loader):
@@ -159,9 +163,9 @@ def main(args):
 
         # save model to ./models
         if epoch % 10 == 0:
-            torch.save(model.state_dict(), f"./models/model_{epoch}.pth")
+            torch.save(model.state_dict(), f"{args.save_dir}/models/{args.dataset}/model_{epoch}.pth")
     # save model
-    torch.save(model.state_dict(), f"./models/model_{args.epochs}.pth")
+    torch.save(model.state_dict(), f"{args.save_dir}/models/{args.dataset}/model_{args.epochs}.pth")
 
 
 if __name__ == "__main__":
