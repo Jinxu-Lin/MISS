@@ -10,7 +10,6 @@ def get_train_loader(
 ):
     
     # load dataset
-
     if args.load_dataset:
         dataset = load_from_disk(
             os.path.join(args.dataset_dir, "train")
@@ -21,7 +20,11 @@ def get_train_loader(
             'cifar10',
             split="train"
         )
-        dataset.save_to_disk("../Dataset/CIFAR10/train")
+            
+    # select CIFAR-2
+    with open(args.train_index_path, 'rb') as handle:
+        sub_idx = pickle.load(handle)
+    dataset = dataset.select(sub_idx)
 
     # data augmentation
     augmentations = transforms.Compose([
@@ -35,11 +38,6 @@ def get_train_loader(
         )
 
     ])
-        
-    # select CIFAR-2
-    with open(args.train_index_path, 'rb') as handle:
-        sub_idx = pickle.load(handle)
-    dataset = dataset.select(sub_idx)
 
     def transform_images(examples):
         images = [augmentations(image.convert("RGB")) for image in examples["img"]]
@@ -107,7 +105,7 @@ def get_test_loader(
 
     test_dataloader = torch.utils.data.DataLoader(
         dataset,
-        batch_size=args.test_batch_size,
+        batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.dataloader_num_workers
     )

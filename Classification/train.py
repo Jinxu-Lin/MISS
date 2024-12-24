@@ -28,11 +28,20 @@ models = {
     'resnet18': resnet18,
 }
 
+def set_seed(seed):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
 def parseArgs():
 
     parser = argparse.ArgumentParser(
         description="Image Classification Training",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    
+    # Seed
+    parser.add_argument("--seed", type=int, default=42,
+                        dest="seed", help='seed')
     
     # Dataset
     parser.add_argument("--dataset", type=str, default='cifar2',
@@ -53,10 +62,8 @@ def parseArgs():
                         dest="center_crop", help='center crop the dataset')
     parser.add_argument("--random-flip", action="store_true", default=False,
                         dest="random_flip", help='random flip the dataset')
-    parser.add_argument("--train-batch-size", type=int, default=64, 
-                        dest="train_batch_size", help="Batch size (per device) for the training dataloader.")
-    parser.add_argument("--test-batch-size", type=int, default=256, 
-                        dest="test_batch_size", help="Batch size (per device) for the test dataloader.")
+    parser.add_argument("--batch-size", type=int, default=64, 
+                        dest="batch_size", help="Batch size (per device) for the training dataloader.")
     parser.add_argument("--dataloader-num-workers", type=int, default=0,
                         dest="dataloader_num_workers", help="The number of subprocesses to use for data loading. 0 means that the data will be loaded in the main process.")
     
@@ -67,7 +74,7 @@ def parseArgs():
     # Optimiser
     parser.add_argument("--optimiser", type=str, default="sgd",
                         dest="optimiser", help="Optimiser to use")
-    parser.add_argument("--learning-rate", type=float, default=0.5,
+    parser.add_argument("--learning-rate", type=float, default=0.4,
                         dest="learning_rate", help="Learning rate")
     parser.add_argument("--momentum", type=float, default=0.9,
                         dest="momentum", help="Momentum")
@@ -89,15 +96,15 @@ def parseArgs():
     # Save
     parser.add_argument("--save-dir", type=str, default='./saved',
                         dest="save_dir", help='save directory')
+    parser.add_argument("--save-interval", type=int, default=10,
+                        dest="save_interval", help='save interval')
 
     return parser.parse_args()
 
 def main(args):
 
     # seed
-    torch.manual_seed(42)
-    np.random.seed(42)
-    random.seed(42)
+    set_seed(args.seed)
 
     # device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -148,7 +155,7 @@ def main(args):
     model.train()
 
     # create models dir
-    os.makedirs(f"{args.save_dir}/models/{args.dataset}", exist_ok=True)
+    os.makedirs(f"{args.save_dir}", exist_ok=True)
 
     for epoch in range(args.epochs):
         for batch_idx, batch in enumerate(train_loader):
@@ -162,11 +169,8 @@ def main(args):
             scheduler.step()
 
         # save model to ./models
-        if epoch % 10 == 0:
-            torch.save(model.state_dict(), f"{args.save_dir}/models/{args.dataset}/model_{epoch}.pth")
-    # save model
-    torch.save(model.state_dict(), f"{args.save_dir}/models/{args.dataset}/model_{args.epochs}.pth")
-
+        if (epoch+1) % args.save_interval == 0 or epoch == args.epochs - 1:
+            torch.save(model.state_dict(), f"{args.save_dir}/model_{epoch}.pth")
 
 if __name__ == "__main__":
     args = parseArgs()

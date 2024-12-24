@@ -22,6 +22,11 @@ def get_train_loader(
             split="train"
         )
 
+    # select CIFAR-10
+    with open(args.train_index_path, 'rb') as handle:
+        sub_idx = pickle.load(handle)
+    dataset = dataset.select(sub_idx)
+
     # data augmentation
     augmentations = transforms.Compose([
         transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR),
@@ -69,6 +74,11 @@ def get_test_loader(
             split="test",
         )
 
+    # select CIFAR-10
+    with open(args.test_index_path, 'rb') as handle:
+        sub_idx = pickle.load(handle)
+    dataset = dataset.select(sub_idx)
+
     # data augmentation
     augmentations = transforms.Compose([
         transforms.ToTensor(),
@@ -87,7 +97,7 @@ def get_test_loader(
 
     test_dataloader = torch.utils.data.DataLoader(
         dataset,
-        batch_size=args.test_batch_size,
+        batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.dataloader_num_workers
     )
