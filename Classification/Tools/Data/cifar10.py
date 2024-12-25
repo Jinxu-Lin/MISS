@@ -90,7 +90,8 @@ def get_test_loader(
 
     def transform_images(examples):
         images = [augmentations(image.convert("RGB")) for image in examples["img"]]
-        return {"input": images}
+        labels = examples["label"]
+        return {"input": images, "label": labels}
 
     if args.data_aug:
         dataset.set_transform(transform_images)
