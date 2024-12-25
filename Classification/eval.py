@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 import random
 import os
-
+import pickle
 import torch
 from torch import optim
 from torch.func import functional_call, vmap, grad 
@@ -45,9 +45,9 @@ def set_seed(seed):
 def output_function(outputs, labels):
     # get the confidence of the model
     prob = torch.nn.functional.softmax(outputs, dim=-1)
-    conf = torch.max(prob, dim=-1)
+    conf, _ = torch.max(prob, dim=-1)
     # get the output function
-    loss = torch.log(conf/1-conf)
+    loss = torch.log(conf/(1-conf))
     return loss
 
 
@@ -68,10 +68,12 @@ def parseArgs():
                         dest="load_dataset", help='load local dataset')
     parser.add_argument("--dataset-dir", type=str, default=None,
                         dest="dataset_dir", help='dataset directory')
+    parser.add_argument("--dataset-split", type=str, default='train',
+                        dest="dataset_split", help='dataset split')
     parser.add_argument("--train-index-path", type=str, default=None,
-                        dest="train_index_path", help='index path')
+                        dest="train_index_path", help='train index path')
     parser.add_argument("--test-index-path", type=str, default=None,
-                        dest="test_index_path", help='index path')
+                        dest="test_index_path", help='test index path')
     parser.add_argument("--data-aug", action="store_true", default=True,
                         dest="data_aug", help='data augmentation')
     parser.add_argument("--resolution", type=int, default=32,
@@ -87,7 +89,11 @@ def parseArgs():
     
     # Model
     parser.add_argument("--model", type=str, default="resnet9",
-                        dest="model", help="Model to use")                  
+                        dest="model", help="Model to use")
+    parser.add_argument("--model-dir", type=str, default='./saved/models',
+                        dest="model_dir", help='model directory')
+    parser.add_argument("--model-name", type=str, default='model_10.pth',
+                        dest="model_name", help='model name')               
     
     # Save
     parser.add_argument("--save-dir", type=str, default='./saved',
@@ -130,9 +136,11 @@ def main(args):
         data, labels = batch["input"].to(device), batch["label"].to(device)
         outputs = model(data)
         loss = output_function(outputs, labels)
-        batch_loss_list.append(loss.item())
+        batch_loss_list.append(loss.detach().cpu().numpy())
 
-    print("Average loss: ", np.mean(batch_loss_list))
+    save_name = f"{args.dataset_split}.pkl"
+    with open(os.path.join(args.save_dir, save_name), "wb") as f:
+        pickle.dump(batch_loss_list, f)
 
 if __name__ == "__main__":
     args = parseArgs()

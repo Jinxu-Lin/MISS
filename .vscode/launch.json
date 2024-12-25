@@ -35,7 +35,25 @@
                 "--model-name", "model_24.pth",
                 "--save-dir", "/home/jinxulin/MISS/Classification/saved/grad"
             ]
-        }
+        },
+        {
+            "name": "C-eval",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./Classification/eval.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--load-dataset",
+                "--dataset-dir", "/home/jinxulin/MISS/Dataset/CIFAR10",
+                "--dataset", "cifar10",
+                "--dataset-split", "train",
+                "--train-index-path", "/home/jinxulin/MISS/Classification/data/cifar10/idx-train.pkl",
+                "--model", "resnet9",
+                "--model-dir", "/home/jinxulin/MISS/Classification/saved/models/cifar10/lds-val/index-0-seed-0",
+                "--model-name", "model_23.pth",
+                "--save-dir", "/home/jinxulin/MISS/Classification/saved/models/cifar10/lds-val/index-0-seed-0"
+            ]
+        },
 
     ]
 }
