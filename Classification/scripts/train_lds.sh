@@ -1,14 +1,21 @@
-echo "gpu_ids: $1"
-echo "start: $2"
-echo "end: $3"
-echo "dataset: $4"
-echo "batch_size: $5"
-echo "lr: $6"
+gpu_ids=$1
+start=$2
+end=$3
+dataset=$4
+batch_size=$5
+lr=$6
 
-if [ "$4" = "cifar10" ] || [ "$4" = "cifar2" ]; then
+echo "gpu_ids: $gpu_ids"
+echo "start: $start"
+echo "end: $end"
+echo "dataset: $dataset"
+echo "batch_size: $batch_size"
+echo "lr: $lr"
+
+if [ "$dataset" = "cifar10" ] || [ "$dataset" = "cifar2" ]; then
     model="resnet9"
     ori_dataset="CIFAR10"
-elif [ "$4" = "imagenet" ]; then
+elif [ "$dataset" = "imagenet" ]; then
     model="resnet18"
     ori_dataset="IMAGENET"
 fi
@@ -16,20 +23,20 @@ fi
 for seed in `seq 0 2`
 do
     echo "seed: $seed"
-    for index in `seq $2 $3`
+    for index in `seq $start $end`
     do
         echo "index: $index"
-        CUDA_VISIBLE_DEVICES=$1 python train.py \
+        CUDA_VISIBLE_DEVICES=$gpu_ids python train.py \
             --seed $seed \
             --load-dataset \
             --dataset-dir ../Dataset/$ori_dataset \
-            --dataset $4 \
-            --train-index-path ./data/$4/lds_val/sub-idx-$index.pkl \
-            --test-index-path ./data/$4/idx-test.pkl \
-            --batch-size $5 \
+            --dataset $dataset \
+            --train-index-path ./data/$dataset/lds_val/sub-idx-$index.pkl \
+            --test-index-path ./data/$dataset/idx-test.pkl \
+            --batch-size $batch_size \
             --model $model \
-            --learning-rate $6 \
-            --save-dir ./saved/models/$4/lds-val/index-$index-seed-$seed \
+            --learning-rate $lr \
+            --save-dir ./saved/models/$dataset/lds-val/index-$index-seed-$seed \
             --save-interval 24
     done
 done

@@ -1,24 +1,30 @@
-echo "gpu_ids: $1"
-echo "seed: $2"
-echo "dataset: $3"
-echo "dataset_split: $4"
+gpu_ids=$1
+seed=$2
+dataset=$3
+dataset_split=$4
 
-if [ "$3" = "cifar10" ] || [ "$3" = "cifar2" ]; then
+echo "gpu_ids: $gpu_ids"
+echo "seed: $seed"
+echo "dataset: $dataset"
+echo "dataset_split: $dataset_split"
+
+if [ "$dataset" = "cifar10" ] || [ "$dataset" = "cifar2" ]; then
     model="resnet9"
     ori_dataset="CIFAR10"
-elif [ "$3" = "imagenet" ]; then
+elif [ "$dataset" = "imagenet" ]; then
     model="resnet18"
     ori_dataset="IMAGENET"
 fi
 
-CUDA_VISIBLE_DEVICES=$1 python grad.py \
+CUDA_VISIBLE_DEVICES=$gpu_ids python grad.py \
+    --seed $seed \
     --load-dataset \
     --dataset-dir ../Dataset/$ori_dataset \
-    --dataset $3 \
-    --dataset-split $4 \
-    --train-index-path ./data/$3/idx-train.pkl \
-    --test-index-path ./data/$3/idx-test.pkl \
+    --dataset $dataset \
+    --dataset-split $dataset_split \
+    --train-index-path ./data/$dataset/idx-train.pkl \
+    --test-index-path ./data/$dataset/idx-test.pkl \
     --model $model \
-    --model-dir ./saved/models/$3/origin/seed-$2 \
+    --model-dir ./saved/models/$dataset/origin/seed-$seed \
     --model-name model_23.pth \
-    --save-dir ./saved/grad/$3/
+    --save-dir ./saved/grad/$dataset/

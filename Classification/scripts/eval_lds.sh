@@ -1,14 +1,19 @@
-echo "gpu_ids: $1"
-echo "start: $2"
-echo "end: $3"
-echo "dataset: $4"
-echo "batch_size: $5"
-echo "dataset_split: $6"
+gpu_ids=$1
+start=$2
+end=$3
+dataset=$4
+dataset_split=$5
 
-if [ "$4" = "cifar10" ] || [ "$4" = "cifar2" ]; then
+echo "gpu_ids: $gpu_ids"
+echo "start: $start"
+echo "end: $end"
+echo "dataset: $dataset"
+echo "dataset_split: $dataset_split"
+
+if [ "$dataset" = "cifar10" ] || [ "$dataset" = "cifar2" ]; then
     model="resnet9"
     ori_dataset="CIFAR10"
-elif [ "$4" = "imagenet" ]; then
+elif [ "$dataset" = "imagenet" ]; then
     model="resnet18"
     ori_dataset="IMAGENET"
 fi
@@ -16,20 +21,20 @@ fi
 for seed in `seq 0 2`
 do
     echo "seed: $seed"
-    for index in `seq $2 $3`
+    for index in `seq $start $end`
     do
         echo "index: $index"
-        CUDA_VISIBLE_DEVICES=$1 python eval.py \
+        CUDA_VISIBLE_DEVICES=$gpu_ids python eval.py \
             --seed $seed \
             --load-dataset \
             --dataset-dir ../Dataset/$ori_dataset \
-            --dataset $4 \
-            --dataset-split $6 \
-            --test-index-path ./data/$4/idx-test.pkl \
-            --batch-size $5 \
+            --dataset $dataset \
+            --dataset-split $dataset_split \
+            --test-index-path ./data/$dataset/idx-test.pkl \
+            --batch-size $batch_size \
             --model $model \
-            --model-dir ./saved/models/$4/lds-val/index-$index-seed-$seed \
+            --model-dir ./saved/models/$dataset/lds-val/index-$index-seed-$seed \
             --model-name model_23.pth \
-            --save-dir ./saved/models/$4/lds-val/index-$index-seed-$seed
+            --save-dir ./saved/models/$dataset/lds-val/index-$index-seed-$seed
     done
 done
