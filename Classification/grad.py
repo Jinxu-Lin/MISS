@@ -164,12 +164,12 @@ def main(args):
 
     # Initialize save np array
     if args.dataset_split == 'train':
-        filename = os.path.join('{}/{}/train-grad-{}-{}-{}.npy'.format(
-            args.save_dir, args.dataset, args.model, args.model_name, args.dim
+        filename = os.path.join('{}/train-grad-{}-{}-{}.npy'.format(
+            args.save_dir, args.model, args.model_name, args.dim
         ))
     else:
-        filename = os.path.join('{}/{}/test-grad-{}-{}-{}.npy'.format(
-            args.save_dir, args.dataset, args.model, args.model_name, args.dim
+        filename = os.path.join('{}/test-grad-{}-{}-{}.npy'.format(
+            args.save_dir, args.model, args.model_name, args.dim
         ))
     os.makedirs(os.path.dirname(filename), exist_ok=True)
 
