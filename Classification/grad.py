@@ -5,6 +5,7 @@ import os
 
 import torch
 from torch import optim
+from torch.nn import functional as F
 from torch.func import functional_call, vmap, grad 
 
 from trak.projectors import ProjectionType, AbstractProjector, CudaProjector
@@ -188,7 +189,9 @@ def main(args):
     
         predictions = functional_call(model, (params, buffers), args=inputs)
         ####
-        f = torch.nn.CrossEntropyLoss()(predictions, labels)
+        prob = F.softmax(predictions, dim=-1)
+        conf, _ = torch.max(prob, dim=-1)
+        f = torch.log(conf/(1-conf))
         ####
         return f 
 

@@ -4,8 +4,7 @@ import random
 import os
 import pickle
 import torch
-from torch import optim
-from torch.func import functional_call, vmap, grad 
+import torch.nn.functional as F
 
 from Tools.Data import cifar2, cifar10, imagenet
 from Tools.Models.resnet import resnet18
@@ -40,15 +39,6 @@ def set_seed(seed):
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-
-
-def output_function(outputs, labels):
-    # get the confidence of the model
-    prob = torch.nn.functional.softmax(outputs, dim=-1)
-    conf, _ = torch.max(prob, dim=-1)
-    # get the output function
-    loss = torch.log(conf/(1-conf))
-    return loss
 
 
 def parseArgs():
@@ -130,20 +120,21 @@ def main(args):
     model.to(device)
     model.eval()
 
-    batch_loss_list = []
-    total_correct = 0
-    total_samples = 0
+    batch_error_list = []
 
     for batch_idx, batch in enumerate(loader):
         print("batch_idx: ", batch_idx)
         data, labels = batch["input"].to(device), batch["label"].to(device)
         outputs = model(data)
-        loss = output_function(outputs, labels)
-        batch_loss_list.append(loss.detach().cpu().numpy())
+        prob = F.softmax(outputs, dim=-1)
+        conf, _ = torch.max(prob, dim=-1)
         
-    save_name = f"{args.dataset_split}.pkl"
+        error = 1 - conf
+        batch_error_list.append(error.detach().cpu().numpy())
+
+    save_name = f"{args.dataset_split}_error.pkl"
     with open(os.path.join(args.save_dir, save_name), "wb") as f:
-        pickle.dump(batch_loss_list, f)
+        pickle.dump(batch_error_list, f)
 
 if __name__ == "__main__":
     args = parseArgs()
