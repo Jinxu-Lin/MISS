@@ -3,13 +3,14 @@ start=$2
 end=$3
 dataset=$4
 dataset_split=$5
+batch_size=$6
 
 echo "gpu_ids: $gpu_ids"
 echo "start: $start"
 echo "end: $end"
 echo "dataset: $dataset"
 echo "dataset_split: $dataset_split"
-
+echo "batch_size: $batch_size"
 if [ "$dataset" = "cifar10" ] || [ "$dataset" = "cifar2" ]; then
     model="resnet9"
     ori_dataset="CIFAR10"

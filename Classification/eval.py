@@ -138,10 +138,11 @@ def main(args):
         print("batch_idx: ", batch_idx)
         data, labels = batch["input"].to(device), batch["label"].to(device)
         outputs = model(data)
-        loss = output_function(outputs, labels)
+        # loss = output_function(outputs, labels)
+        loss = torch.nn.CrossEntropyLoss()(outputs, labels)
         batch_loss_list.append(loss.detach().cpu().numpy())
         
-    save_name = f"{args.dataset_split}.pkl"
+    save_name = f"{args.dataset_split}_CE.pkl"
     with open(os.path.join(args.save_dir, save_name), "wb") as f:
         pickle.dump(batch_loss_list, f)
 
