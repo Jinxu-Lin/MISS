@@ -183,17 +183,17 @@ def main(args):
     
     # model evaluation for gradient computation
     # define model output function
-    def compute_f(params, buffers, inputs, labels):
-        inputs = inputs.unsqueeze(0)
-        labels = labels.unsqueeze(0)
-    
-        predictions = functional_call(model, (params, buffers), args=inputs)
-        ####
+    def compute_f(params, buffers, input, label):
+        input = input.unsqueeze(0)
+        label = label.unsqueeze(0)
+        
+        predictions = functional_call(model, (params, buffers), args=input)
         prob = F.softmax(predictions, dim=-1)
-        conf, _ = torch.max(prob, dim=-1)
+        ####
+        conf = (prob * label).sum(dim=-1)  # 点乘后求和,得到对应类别的概率
         f = torch.log(conf/(1-conf))
         ####
-        return f 
+        return f.squeeze()
 
 
     ft_compute_grad = grad(compute_f)
@@ -205,9 +205,11 @@ def main(args):
     for batch_idx, batch in enumerate(loader):
         print("batch_idx: ", batch_idx)
         inputs, labels = batch["input"].to(device), batch["label"].to(device)
+        labels_one_hot = torch.zeros(labels.size(0), num_classes, device=labels.device)
+        labels_one_hot.scatter_(1, labels.unsqueeze(1).long(), 1)
 
         # compute gradient
-        ft_per_sample_grads = ft_compute_sample_grad(params, buffers, inputs, labels)
+        ft_per_sample_grads = ft_compute_sample_grad(params, buffers, inputs, labels_one_hot)
         ft_per_sample_grads = vectorize_and_ignore_buffers(list(ft_per_sample_grads.values()))
 
         # project gradient
