@@ -27,4 +27,4 @@ CUDA_VISIBLE_DEVICES=$gpu_ids python grad.py \
     --model $model \
     --model-dir ./saved/models/$dataset/origin/seed-$seed \
     --model-name model_23.pth \
-    --save-dir ./saved/grad/$dataset/
+    --save-dir ./saved/grad/$dataset/seed-$seed \
