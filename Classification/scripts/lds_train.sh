@@ -31,7 +31,7 @@ do
             --load-dataset \
             --dataset-dir ../Dataset/$ori_dataset \
             --dataset $dataset \
-            --train-index-path ./data/$dataset/lds_val/sub-idx-$index.pkl \
+            --train-index-path ./data/$dataset/lds-val/sub-idx-$index.pkl \
             --test-index-path ./data/$dataset/idx-test.pkl \
             --batch-size $batch_size \
             --model $model \
