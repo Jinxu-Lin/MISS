@@ -139,7 +139,7 @@ def main(args):
         data, labels = batch["input"].to(device), batch["label"].to(device)
         outputs = model(data)
         # loss = output_function(outputs, labels)
-        loss = torch.nn.CrossEntropyLoss()(outputs, labels)
+        loss = torch.nn.CrossEntropyLoss(reduction='none')(outputs, labels)
         batch_loss_list.append(loss.detach().cpu().numpy())
         
     save_name = f"{args.dataset_split}_CE.pkl"
