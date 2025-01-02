@@ -137,7 +137,8 @@ def main(args):
     for batch_idx, batch in enumerate(loader):
         print("batch_idx: ", batch_idx)
         data, labels = batch["input"].to(device), batch["label"].to(device)
-        outputs = model(data)
+        with torch.no_grad():
+            outputs = model(data)
         # loss = output_function(outputs, labels)
         loss = torch.nn.CrossEntropyLoss(reduction='none')(outputs, labels)
         batch_loss_list.append(loss.detach().cpu().numpy())

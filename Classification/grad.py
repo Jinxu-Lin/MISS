@@ -187,14 +187,14 @@ def main(args):
         input = input.unsqueeze(0)
         label = label.unsqueeze(0)
         
-        predictions = functional_call(model, (params, buffers), args=input)
+        predictions = functional_call(model, (params, buffers), args=(input,))
         prob = F.softmax(predictions, dim=-1)
         ####
         conf = (prob * label).sum(dim=-1)  # 点乘后求和,得到对应类别的概率
         f = torch.log(conf/(1-conf))
+        f = f.mean()
         ####
-        return f.squeeze()
-
+        return f
 
     ft_compute_grad = grad(compute_f)
     ft_compute_sample_grad = vmap(
