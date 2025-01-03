@@ -113,10 +113,10 @@ def main(args):
     # device = torch.device("cpu")
 
     # load dataset
-    train_loader = dataset_loader[args.dataset].get_train_loader(
+    train_dataloader = dataset_loader[args.dataset].get_train_loader(
         args,
     )
-    test_loader = dataset_loader[args.dataset].get_test_loader(
+    test_dataloader = dataset_loader[args.dataset].get_test_loader(
         args,
     )
 
@@ -145,7 +145,7 @@ def main(args):
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=0)
     elif args.scheduler == "Cyclic":
         def triangular_lr(epoch_iter):
-            iters_per_epoch = len(train_loader)
+            iters_per_epoch = len(train_dataloader)
             total_iters = args.epochs * iters_per_epoch
             peak_iter = args.lr_peak_epoch * iters_per_epoch
             # Triangular learning rate
@@ -160,7 +160,7 @@ def main(args):
     os.makedirs(f"{args.save_dir}", exist_ok=True)
 
     for epoch in range(args.epochs):
-        for batch_idx, batch in enumerate(train_loader):
+        for batch_idx, batch in enumerate(train_dataloader):
             print("epoch: ", epoch, "batch_idx: ", batch_idx)
             data, labels = batch["input"].to(device), batch["label"].to(device)
             optimizer.zero_grad()
