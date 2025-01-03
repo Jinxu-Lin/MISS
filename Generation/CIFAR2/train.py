@@ -363,7 +363,7 @@ def main(args):
 
                 if global_step % args.checkpointing_steps == 0:
                     if accelerator.is_main_process:
-                        save_path = f"{args.save_dir}/seed-{args.seed}/checkpoint-{global_step}"
+                        save_path = f"{args.save_dir}/checkpoint-{global_step}"
                         os.makedirs(save_path, exist_ok=True)
                         accelerator.save_state(save_path)
                         logger.info(f"Saved state to {save_path}")
@@ -388,8 +388,7 @@ def main(args):
                     scheduler=noise_scheduler,
                 )
 
-                save_path = f"{args.save_dir}/seed-{args.seed}"
-                os.makedirs(save_path, exist_ok=True)
+                os.makedirs(args.save_dir, exist_ok=True)
                 pipeline.save_pretrained(save_path)
 
     accelerator.end_training()

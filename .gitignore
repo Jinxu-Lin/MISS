@@ -6,3 +6,4 @@ Dataset/
 *.csv
 *.pkl
 *.pt
+*/data/
