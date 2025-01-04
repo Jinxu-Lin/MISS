@@ -2,13 +2,17 @@ import argparse
 import numpy as np
 import random
 import os
+from typing import Iterable
+from tqdm import tqdm
 
 import torch
 from torch import optim
+from torch import Tensor
+from torch.nn import Module
 from torch.nn import functional as F
 from torch.func import functional_call, vmap, grad 
 
-from trak.projectors import ProjectionType, AbstractProjector, CudaProjector
+from trak.projectors import ProjectionType, CudaProjector
 
 from Tools.Data import cifar2, cifar10, imagenet
 from Tools.Models.resnet import resnet18, resnet34
@@ -49,22 +53,26 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad) 
 
 
-def vectorize_and_ignore_buffers(g, params_dict=None):
-    """
-    gradients are given as a tuple :code:`(grad_w0, grad_w1, ... grad_wp)` where
-    :code:`p` is the number of weight matrices. each :code:`grad_wi` has shape
-    :code:`[batch_size, ...]` this function flattens :code:`g` to have shape
-    :code:`[batch_size, num_params]`.
-    """
-    batch_size = len(g[0])
-    out = []
-    if params_dict is not None:
-        for b in range(batch_size):
-            out.append(torch.cat([x[b].flatten() for i, x in enumerate(g) if is_not_buffer(i, params_dict)]))
-    else:
-        for b in range(batch_size):
-            out.append(torch.cat([x[b].flatten() for x in g]))
-    return torch.stack(out)
+def output_function(
+        model: Module,
+        weights: Iterable[Tensor],
+        buffers: Iterable[Tensor],
+        image: Tensor,
+        label: Tensor,
+    ) -> Tensor:
+        logits = torch.func.functional_call(model, (weights, buffers), image.unsqueeze(0))
+        bindex = torch.arange(logits.shape[0]).to(logits.device, non_blocking=False)
+        logits_correct = logits[bindex, label.unsqueeze(0)]
+
+        cloned_logits = logits.clone()
+        # remove the logits of the correct labels from the sum
+        # in logsumexp by setting to -torch.inf
+        cloned_logits[bindex, label.unsqueeze(0)] = torch.tensor(
+            -torch.inf, device=logits.device, dtype=logits.dtype
+        )
+
+        margins = logits_correct - cloned_logits.logsumexp(dim=-1)
+        return margins.sum()
 
 
 def parseArgs():
@@ -123,7 +131,6 @@ def parseArgs():
 
 
 def main(args):
-
     # seed
     set_seed(args.seed)
 
@@ -149,78 +156,43 @@ def main(args):
     model.to(device)
     model.eval()
 
-    # get params and buffers
-    params = {k: v.detach() for k, v in model.named_parameters() if v.requires_grad==True}
-    buffers = {k: v.detach() for k, v in model.named_buffers() if v.requires_grad==True}
+    normalize_factor = torch.sqrt(
+        torch.tensor(count_parameters(model), dtype=torch.float32)
+    )
 
-    # initialize projector
+    func_weights = dict(model.named_parameters())
+    func_buffers = dict(model.named_buffers())
+
     projector = CudaProjector(
         grad_dim=count_parameters(model), 
         proj_dim=args.dim,
         seed=args.seed, 
         proj_type=ProjectionType.normal,
         device=device,
+        max_batch_size=16
     )
 
-    # Initialize save np array
-    if args.dataset_split == 'train':
-        filename = os.path.join('{}/train-grad-{}-{}-{}.npy'.format(
-            args.save_dir, args.model, args.model_name, args.dim
-        ))
-    else:
-        filename = os.path.join('{}/test-grad-{}-{}-{}.npy'.format(
-            args.save_dir, args.model, args.model_name, args.dim
-        ))
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    for batch_idx, batch in enumerate(tqdm(loader)):
+        batch = [x.cuda() for x in batch]
 
-    # TODO: test store shape not defined
-    dstore_keys = np.memmap(filename, 
-                            dtype=np.float32, 
-                            mode='w+', 
-                            shape=(dataset_len[args.dataset], args.dim)) 
-    
-    
-    # model evaluation for gradient computation
-    # define model output function
-    def compute_f(params, buffers, input, label):
-        input = input.unsqueeze(0)
-        label = label.unsqueeze(0)
+        # taking the gradient wrt weights (second argument of get_output, hence argnums=1)
+        grads_loss = torch.func.grad(
+            output_function, has_aux=False, argnums=1
+        )
+        # map over batch dimensions (hence 0 for each batch dimension, and None for model params)
+        grads = torch.func.vmap(
+            grads_loss,
+            in_dims=(None, None, None, *([0] * len(batch))),
+            randomness="different",
+        )(model, func_weights, func_buffers, *batch)
+
+        project_grad = projector.project(grads, model_id=0)
+        normalize_grad = project_grad / normalize_factor
+
+        print(normalize_grad.shape)
+
         
-        predictions = functional_call(model, (params, buffers), args=(input,))
-        prob = F.softmax(predictions, dim=-1)
-        ####
-        conf = (prob * label).sum(dim=-1)  # 点乘后求和,得到对应类别的概率
-        f = torch.log(conf/(1-conf))
-        f = f.mean()
-        ####
-        return f
 
-    ft_compute_grad = grad(compute_f)
-    ft_compute_sample_grad = vmap(
-        ft_compute_grad, 
-        in_dims=(None, None, 0, 0)
-    )
-
-    for batch_idx, batch in enumerate(loader):
-        print("batch_idx: ", batch_idx)
-        inputs, labels = batch["input"].to(device), batch["label"].to(device)
-        labels_one_hot = torch.zeros(labels.size(0), num_classes, device=labels.device)
-        labels_one_hot.scatter_(1, labels.unsqueeze(1).long(), 1)
-
-        # compute gradient
-        ft_per_sample_grads = ft_compute_sample_grad(params, buffers, inputs, labels_one_hot)
-        ft_per_sample_grads = vectorize_and_ignore_buffers(list(ft_per_sample_grads.values()))
-
-        # project gradient
-        ft_per_sample_grads = projector.project(ft_per_sample_grads, model_id=0)
-
-        # save gradient
-        index_start = batch_idx * args.batch_size
-        index_end = index_start + args.batch_size
-        while (np.abs(dstore_keys[index_start:index_end, 0:32]).sum()==0):
-            dstore_keys[index_start:index_end] = ft_per_sample_grads.detach().cpu().numpy()
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     args = parseArgs()
     main(args)

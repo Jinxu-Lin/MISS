@@ -21,8 +21,8 @@ fi
 CUDA_VISIBLE_DEVICES=$gpu_ids python train.py \
     --seed $seed \
     --load-dataset \
-    --dataset-dir ../Dataset/$ori_dataset \
     --dataset $dataset \
+    --dataset-dir ../Dataset/$ori_dataset \
     --train-index-path ./data/$dataset/idx-train.pkl \
     --test-index-path ./data/$dataset/idx-test.pkl \
     --batch-size $batch_size \

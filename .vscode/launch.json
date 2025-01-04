@@ -22,7 +22,7 @@
             "name": "C-grad",
             "type": "debugpy",
             "request": "launch",
-            "program": "./Classification/grad.py",
+            "program": "./Classification/grad1.py",
             "console": "integratedTerminal",
             "args": [
                 "--load-dataset",

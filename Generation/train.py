@@ -1,11 +1,11 @@
 import os
 import math
-import tqdm
 import argparse
 import logging
 import random
 import inspect
 import numpy as np
+from tqdm import tqdm
 
 import torch
 import torch.nn.functional as F
@@ -163,6 +163,9 @@ def parse_args():
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1,
                         dest="gradient_accumulation_steps",
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
+    parser.add_argument("--save-model-epochs", type=int, default=10,
+                        dest="save_model_epochs",
+                        help="Save the model every X epochs.")
     
     # logging
     parser.add_argument("--logger", type=str, default='tensorboard',
@@ -319,9 +322,11 @@ def main(args):
             clean_images = batch["input"]
             # Sample noise that we'll add to the images
             noise = torch.randn(clean_images.shape).to(clean_images.device)
+            # Number of images in this batch
+            num_images = clean_images.shape[0]
             # Sample a random timestep for each image
             timesteps = torch.randint(
-                0, noise_scheduler.config.num_train_timesteps, (args.batch_size,), device=clean_images.device
+                0, noise_scheduler.config.num_train_timesteps, (num_images,), device=clean_images.device
             ).long()
 
             # Add noise to the clean images according to the noise magnitude at each timestep
@@ -389,9 +394,11 @@ def main(args):
                 )
 
                 os.makedirs(args.save_dir, exist_ok=True)
-                pipeline.save_pretrained(save_path)
+                pipeline.save_pretrained(args.save_dir)
 
     accelerator.end_training()
+
+
 if __name__ == "__main__":
     args = parse_args()
     print(args)
