@@ -172,8 +172,8 @@ def main(args):
         max_batch_size=16
     )
 
-    for batch_idx, batch in enumerate(tqdm(loader)):
-        batch = [x.cuda() for x in batch]
+    for batch in tqdm(loader):
+        inputs, labels = batch["input"].to(device), batch["label"].to(device)
 
         # taking the gradient wrt weights (second argument of get_output, hence argnums=1)
         grads_loss = torch.func.grad(
@@ -184,7 +184,7 @@ def main(args):
             grads_loss,
             in_dims=(None, None, None, *([0] * len(batch))),
             randomness="different",
-        )(model, func_weights, func_buffers, *batch)
+        )(model, func_weights, func_buffers, inputs, labels)
 
         project_grad = projector.project(grads, model_id=0)
         normalize_grad = project_grad / normalize_factor
