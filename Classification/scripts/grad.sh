@@ -2,12 +2,13 @@ gpu_ids=$1
 seed=$2
 dataset=$3
 dataset_split=$4
+batch_size=$5
 
 echo "gpu_ids: $gpu_ids"
 echo "seed: $seed"
 echo "dataset: $dataset"
 echo "dataset_split: $dataset_split"
-
+echo "batch_size: $batch_size"
 if [ "$dataset" = "cifar10" ] || [ "$dataset" = "cifar2" ]; then
     model="resnet9"
     ori_dataset="CIFAR10"
@@ -16,7 +17,7 @@ elif [ "$dataset" = "imagenet" ]; then
     ori_dataset="IMAGENET"
 fi
 
-CUDA_VISIBLE_DEVICES=$gpu_ids python grad.py \
+CUDA_VISIBLE_DEVICES=$gpu_ids python grad1.py \
     --seed $seed \
     --load-dataset \
     --dataset-dir ../Dataset/$ori_dataset \
@@ -28,3 +29,4 @@ CUDA_VISIBLE_DEVICES=$gpu_ids python grad.py \
     --model-dir ./saved/models/$dataset/origin/seed-$seed \
     --model-name model_23.pth \
     --save-dir ./saved/grad/$dataset/seed-$seed \
+    --batch-size $batch_size
