@@ -31,6 +31,12 @@ dataset_len = {
     'imagenet': 1281167
 }
 
+testset_len = {
+    'cifar2': 2000,
+    'cifar10': 10000,
+    'imagenet': 50000
+}
+
 dataset_loader = {
     'cifar2': cifar2,
     'cifar10': cifar10,
@@ -156,24 +162,16 @@ def main(args):
     model.to(device)
     model.eval()
 
+    # get params and buffers
+    func_weights = dict(model.named_parameters())
+    func_buffers = dict(model.named_buffers())
+
+    # normalize factor
     normalize_factor = torch.sqrt(
         torch.tensor(count_parameters(model), dtype=torch.float32)
     )
 
-    func_weights = dict(model.named_parameters())
-    func_buffers = dict(model.named_buffers())
-
-    # Initialize save np array
-    if args.dataset_split == 'train':
-        filename = os.path.join('{}/train-grad-{}-{}-{}.npy'.format(
-            args.save_dir, args.model, args.model_name, args.dim
-        ))
-    else:
-        filename = os.path.join('{}/test-grad-{}-{}-{}.npy'.format(
-            args.save_dir, args.model, args.model_name, args.dim
-        ))
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
-
+    # initialize projector
     projector = CudaProjector(
         grad_dim=count_parameters(model), 
         proj_dim=args.dim,
@@ -183,18 +181,35 @@ def main(args):
         max_batch_size=16
     )
 
-    dstore_keys = np.memmap(filename, 
-                            dtype=np.float32, 
-                            mode='w+', 
-                            shape=(dataset_len[args.dataset], args.dim)) 
+    # initialize save np array
+    if args.dataset_split == 'train':
+        filename = os.path.join('{}/train-grad-{}-{}-{}.npy'.format(
+            args.save_dir, args.model, args.model_name, args.dim
+        ))
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        dstore_keys = np.memmap(filename, 
+            dtype=np.float32, 
+            mode='w+', 
+            shape=(dataset_len[args.dataset], args.dim)) 
+    else:
+        filename = os.path.join('{}/test-grad-{}-{}-{}.npy'.format(
+            args.save_dir, args.model, args.model_name, args.dim
+        ))
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        dstore_keys = np.memmap(filename, 
+            dtype=np.float32, 
+            mode='w+', 
+            shape=(testset_len[args.dataset], args.dim)) 
 
     for batch_idx, batch in enumerate(loader):
+        
         inputs, labels = batch["input"].to(device), batch["label"].to(device)
 
         # taking the gradient wrt weights (second argument of get_output, hence argnums=1)
         grads_loss = torch.func.grad(
             output_function, has_aux=False, argnums=1
         )
+
         # map over batch dimensions (hence 0 for each batch dimension, and None for model params)
         grads = torch.func.vmap(
             grads_loss,
@@ -205,14 +220,11 @@ def main(args):
         project_grad = projector.project(grads, model_id=0)
         normalize_grad = project_grad / normalize_factor
 
-        print(normalize_grad.shape)
         # save gradient
         index_start = batch_idx * args.batch_size
         index_end = index_start + args.batch_size
         while (np.abs(dstore_keys[index_start:index_end, 0:32]).sum()==0):
             dstore_keys[index_start:index_end] = normalize_grad.detach().cpu().numpy()
-
-        
 
 if __name__ == '__main__':
     args = parseArgs()
