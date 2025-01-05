@@ -34,7 +34,8 @@
                 "--model", "resnet9",
                 "--model-dir", "/home/jinxulin/MISS/Classification/saved/models/cifar2/origin/seed-0/",
                 "--model-name", "model_23.pth",
-                "--save-dir", "/home/jinxulin/MISS/Classification/saved/grad"
+                "--save-dir", "/home/jinxulin/MISS/Classification/saved/grad",
+                "--batch-size", "16"
             ]
         },
         {

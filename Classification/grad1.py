@@ -163,6 +163,17 @@ def main(args):
     func_weights = dict(model.named_parameters())
     func_buffers = dict(model.named_buffers())
 
+    # Initialize save np array
+    if args.dataset_split == 'train':
+        filename = os.path.join('{}/train-grad-{}-{}-{}.npy'.format(
+            args.save_dir, args.model, args.model_name, args.dim
+        ))
+    else:
+        filename = os.path.join('{}/test-grad-{}-{}-{}.npy'.format(
+            args.save_dir, args.model, args.model_name, args.dim
+        ))
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+
     projector = CudaProjector(
         grad_dim=count_parameters(model), 
         proj_dim=args.dim,
@@ -172,7 +183,12 @@ def main(args):
         max_batch_size=16
     )
 
-    for batch in tqdm(loader):
+    dstore_keys = np.memmap(filename, 
+                            dtype=np.float32, 
+                            mode='w+', 
+                            shape=(dataset_len[args.dataset], args.dim)) 
+
+    for batch_idx, batch in enumerate(loader):
         inputs, labels = batch["input"].to(device), batch["label"].to(device)
 
         # taking the gradient wrt weights (second argument of get_output, hence argnums=1)
@@ -190,6 +206,11 @@ def main(args):
         normalize_grad = project_grad / normalize_factor
 
         print(normalize_grad.shape)
+        # save gradient
+        index_start = batch_idx * args.batch_size
+        index_end = index_start + args.batch_size
+        while (np.abs(dstore_keys[index_start:index_end, 0:32]).sum()==0):
+            dstore_keys[index_start:index_end] = normalize_grad.detach().cpu().numpy()
 
         
 
