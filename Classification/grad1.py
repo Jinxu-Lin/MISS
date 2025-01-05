@@ -202,7 +202,8 @@ def main(args):
             shape=(testset_len[args.dataset], args.dim)) 
 
     for batch_idx, batch in enumerate(loader):
-        
+        print(batch_idx)
+
         inputs, labels = batch["input"].to(device), batch["label"].to(device)
 
         # taking the gradient wrt weights (second argument of get_output, hence argnums=1)
