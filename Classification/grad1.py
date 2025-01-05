@@ -183,8 +183,8 @@ def main(args):
 
     # initialize save np array
     if args.dataset_split == 'train':
-        filename = os.path.join('{}/train-grad-{}-{}-{}.npy'.format(
-            args.save_dir, args.model, args.model_name, args.dim
+        filename = os.path.join('{}/train-{}.npy'.format(
+            args.save_dir, args.dim
         ))
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         dstore_keys = np.memmap(filename, 
@@ -192,8 +192,8 @@ def main(args):
             mode='w+', 
             shape=(dataset_len[args.dataset], args.dim)) 
     else:
-        filename = os.path.join('{}/test-grad-{}-{}-{}.npy'.format(
-            args.save_dir, args.model, args.model_name, args.dim
+        filename = os.path.join('{}/test-{}.npy'.format(
+            args.save_dir, args.dim
         ))
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         dstore_keys = np.memmap(filename, 
