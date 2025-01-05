@@ -3,7 +3,10 @@ import numpy as np
 import random
 import os
 import pickle
+from typing import Iterable
+
 import torch
+from torch import Tensor
 import torch.nn.functional as F
 
 from Tools.Data import cifar2, cifar10, imagenet
@@ -40,6 +43,35 @@ def set_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
 
+
+def get_out_to_loss_grad(
+    self, model, weights, buffers, batch: Iterable[Tensor]
+) -> Tensor:
+    """Computes the (reweighting term Q in the paper)
+
+    Args:
+        model (torch.nn.Module):
+            torch model
+        weights (Iterable[Tensor]):
+            functorch model weights
+        buffers (Iterable[Tensor]):
+            functorch model buffers
+        batch (Iterable[Tensor]):
+            input batch
+
+    Returns:
+        Tensor:
+            out-to-loss (reweighting term) for the input batch
+    """
+    images, labels = batch
+    logits = torch.func.functional_call(model, (weights, buffers), images)
+    # here we are directly implementing the gradient instead of relying on autodiff to do
+    # that for us
+    ps = torch.softmax(logits / self.loss_temperature)[
+        torch.arange(logits.size(0)), labels
+    ]
+    return (1 - ps).clone().detach().unsqueeze(-1)
+    
 
 def parseArgs():
 
@@ -123,8 +155,9 @@ def main(args):
     batch_error_list = []
 
     for batch_idx, batch in enumerate(loader):
-        print("batch_idx: ", batch_idx)
+        print(f"{batch_idx}/{len(loader)}")
         data, labels = batch["input"].to(device), batch["label"].to(device)
+        
         outputs = model(data)
         prob = F.softmax(outputs, dim=-1)
         conf, _ = torch.max(prob, dim=-1)

@@ -57,6 +57,14 @@
                 "--save-dir", "/home/jinxulin/MISS/Classification/saved/models/cifar2/origin/seed-0"
             ]
         },
+        {
+            "name": "C-quickstart",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./Classification/quickstart.py",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
 
     ]
 }
