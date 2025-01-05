@@ -202,7 +202,7 @@ def main(args):
             shape=(testset_len[args.dataset], args.dim)) 
 
     for batch_idx, batch in enumerate(loader):
-        print(batch_idx)
+        print(f"{batch_idx}/{len(loader)}")
 
         inputs, labels = batch["input"].to(device), batch["label"].to(device)
 
