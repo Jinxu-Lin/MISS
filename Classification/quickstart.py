@@ -85,11 +85,15 @@ def get_dataloader(batch_size=256, num_workers=8, split='train', shuffle=False, 
 
 def main():
     # load model
-    ckpt_files = sorted(list(Path('/home/jinxulin/MISS/Classification/checkpoints').rglob('*.pt')))
-    ckpts = [torch.load(ckpt, map_location='cpu') for ckpt in ckpt_files]
+    base_path = Path('./saved/models/cifar10/origin')
+    model_files = sorted(list(base_path.rglob('seed-*/model_23.pth')))
+    ckpts = [torch.load(model_file, map_location='cpu') for model_file in model_files]
     model = construct_rn9().to(memory_format=torch.channels_last).cuda()
-    model.load_state_dict(ckpts[-1])
-    model = model.eval()
+    if ckpts:
+        model.load_state_dict(ckpts[-1])
+        model = model.eval()
+    else:
+        print("No model files found!")
 
     # load data
     batch_size = 128
@@ -113,7 +117,7 @@ def main():
 
     # compute trak features for test data
     for model_id, ckpt in enumerate(tqdm(ckpts)):
-        traker.start_scoring_checkpoint(exp_name='quickstart',
+        traker.start_scoring_checkpoint(exp_name='cifar10',
                                         checkpoint=ckpt,
                                         model_id=model_id,
                                         num_targets=len(loader_targets.dataset))
@@ -121,7 +125,7 @@ def main():
             batch = [x.cuda() for x in batch]
             traker.score(batch=batch, num_samples=batch[0].shape[0])
 
-    scores = traker.finalize_scores(exp_name='quickstart')
+    scores = traker.finalize_scores(exp_name='cifar10')
     print(scores.shape)
 
 if __name__ == "__main__":
