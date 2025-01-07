@@ -142,7 +142,7 @@ def main():
 
 
     # Load masks and margins
-    tmp_path = './tmp'
+    tmp_path = '/home/jinxulin/MISS/Classification/tmp'
     masks_path = Path(tmp_path).joinpath('mask.npy')
     masks = torch.as_tensor(np.load(masks_path, mmap_mode='r')).float()
 
