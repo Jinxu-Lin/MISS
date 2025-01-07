@@ -5,18 +5,21 @@ import os
 from typing import Iterable
 from tqdm import tqdm
 
+
 import torch
 from torch import optim
 from torch import Tensor
 from torch.nn import Module
 from torch.nn import functional as F
 from torch.func import functional_call, vmap, grad 
-
+import torchvision
 from trak.projectors import ProjectionType, CudaProjector
 
 from Tools.Data import cifar2, cifar10, imagenet
 from Tools.Models.resnet import resnet18, resnet34
 from Tools.Models.resnet9 import resnet9
+
+from trak.traker import TRAKer
 
 
 dataset_num_classes = {
@@ -81,6 +84,34 @@ def output_function(
         return margins.sum()
 
 
+def get_dataloader(batch_size=256, num_workers=8, split='train', shuffle=False, augment=True):
+    if augment:
+        transforms = torchvision.transforms.Compose(
+                        [torchvision.transforms.RandomHorizontalFlip(),
+                         torchvision.transforms.RandomAffine(0),
+                         torchvision.transforms.ToTensor(),
+                         torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                                          (0.2023, 0.1994, 0.201))])
+    else:
+        transforms = torchvision.transforms.Compose([
+                         torchvision.transforms.ToTensor(),
+                         torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                                          (0.2023, 0.1994, 0.201))])
+        
+    is_train = (split == 'train')
+    dataset = torchvision.datasets.CIFAR10(root='/tmp/cifar/',
+                                           download=True,
+                                           train=is_train,
+                                           transform=transforms)
+
+    loader = torch.utils.data.DataLoader(dataset=dataset,
+                                         shuffle=shuffle,
+                                         batch_size=batch_size,
+                                         num_workers=num_workers)
+    
+    return loader
+
+
 def parseArgs():
 
     parser = argparse.ArgumentParser(
@@ -141,17 +172,13 @@ def main(args):
     set_seed(args.seed)
 
     # device
+    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # load dataset
     if args.dataset_split == 'train':
-        loader = dataset_loader[args.dataset].get_train_loader(
-            args,
-        )
+        loader = get_dataloader(batch_size=args.batch_size, split='train')
     else:
-        loader = dataset_loader[args.dataset].get_test_loader(
-            args,
-        )
+        loader = get_dataloader(batch_size=args.batch_size, split='val', augment=False)
 
     # load model
     num_classes = dataset_num_classes[args.dataset]
@@ -175,36 +202,38 @@ def main(args):
     projector = CudaProjector(
         grad_dim=count_parameters(model), 
         proj_dim=args.dim,
-        seed=args.seed, 
-        proj_type=ProjectionType.normal,
+        seed=0, 
+        proj_type=ProjectionType.rademacher,
+        max_batch_size=32,
+        dtype=torch.float16,
         device=device,
-        max_batch_size=16
-    )
+    )    
 
     # initialize save np array
     if args.dataset_split == 'train':
-        filename = os.path.join('{}/train-{}.npy'.format(
-            args.save_dir, args.dim
-        ))
+        filename = os.path.join(args.save_dir, f'train-{args.dim}.npy')
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         dstore_keys = np.memmap(filename, 
-            dtype=np.float32, 
+            dtype=np.float16, 
             mode='w+', 
             shape=(dataset_len[args.dataset], args.dim)) 
     else:
-        filename = os.path.join('{}/test-{}.npy'.format(
-            args.save_dir, args.dim
-        ))
+        filename = os.path.join(args.save_dir, f'test-{args.dim}.npy')
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         dstore_keys = np.memmap(filename, 
-            dtype=np.float32, 
+            dtype=np.float16, 
             mode='w+', 
             shape=(testset_len[args.dataset], args.dim)) 
+
+    index_start = 0
 
     for batch_idx, batch in enumerate(loader):
         print(f"{batch_idx}/{len(loader)}")
 
-        inputs, labels = batch["input"].to(device), batch["label"].to(device)
+        index_end = index_start + len(batch[0])
+
+        # inputs, labels = batch["input"].to(device), batch["label"].to(device)
+        inputs, labels = batch[0].to(device), batch[1].to(device)
 
         # taking the gradient wrt weights (second argument of get_output, hence argnums=1)
         grads_loss = torch.func.grad(
@@ -222,10 +251,9 @@ def main(args):
         normalize_grad = project_grad / normalize_factor
 
         # save gradient
-        index_start = batch_idx * args.batch_size
-        index_end = index_start + args.batch_size
-        while (np.abs(dstore_keys[index_start:index_end, 0:32]).sum()==0):
-            dstore_keys[index_start:index_end] = normalize_grad.detach().cpu().numpy()
+        dstore_keys[index_start:index_end] = normalize_grad.to(torch.float16).cpu().clone().detach().numpy()
+        index_start = index_end
+
 
 if __name__ == '__main__':
     args = parseArgs()

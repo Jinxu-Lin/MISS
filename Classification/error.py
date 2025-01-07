@@ -2,16 +2,24 @@ import argparse
 import numpy as np
 import random
 import os
-import pickle
 from typing import Iterable
+from tqdm import tqdm
+
 
 import torch
+from torch import optim
 from torch import Tensor
-import torch.nn.functional as F
+from torch.nn import Module
+from torch.nn import functional as F
+from torch.func import functional_call, vmap, grad 
+import torchvision
+from trak.projectors import ProjectionType, CudaProjector
 
 from Tools.Data import cifar2, cifar10, imagenet
-from Tools.Models.resnet import resnet18
+from Tools.Models.resnet import resnet18, resnet34
 from Tools.Models.resnet9 import resnet9
+
+from trak.traker import TRAKer
 
 
 dataset_num_classes = {
@@ -24,6 +32,12 @@ dataset_len = {
     'cifar2': 10000,
     'cifar10': 50000,
     'imagenet': 1281167
+}
+
+testset_len = {
+    'cifar2': 2000,
+    'cifar10': 10000,
+    'imagenet': 50000
 }
 
 dataset_loader = {
@@ -44,34 +58,49 @@ def set_seed(seed):
     random.seed(seed)
 
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad) 
+
+
 def get_out_to_loss_grad(
-    self, model, weights, buffers, batch: Iterable[Tensor]
-) -> Tensor:
-    """Computes the (reweighting term Q in the paper)
+        model, weights, buffers, inputs, labels
+    ) -> Tensor:
+        logits = torch.func.functional_call(model, (weights, buffers), inputs)
+        # here we are directly implementing the gradient instead of relying on autodiff to do
+        # that for us
+        ps = torch.nn.Softmax(-1)(logits)[
+            torch.arange(logits.size(0)), labels
+        ]
+        return (1 - ps).clone().detach().unsqueeze(-1)
 
-    Args:
-        model (torch.nn.Module):
-            torch model
-        weights (Iterable[Tensor]):
-            functorch model weights
-        buffers (Iterable[Tensor]):
-            functorch model buffers
-        batch (Iterable[Tensor]):
-            input batch
 
-    Returns:
-        Tensor:
-            out-to-loss (reweighting term) for the input batch
-    """
-    images, labels = batch
-    logits = torch.func.functional_call(model, (weights, buffers), images)
-    # here we are directly implementing the gradient instead of relying on autodiff to do
-    # that for us
-    ps = torch.softmax(logits / self.loss_temperature)[
-        torch.arange(logits.size(0)), labels
-    ]
-    return (1 - ps).clone().detach().unsqueeze(-1)
+def get_dataloader(batch_size=256, num_workers=8, split='train', shuffle=False, augment=True):
+    if augment:
+        transforms = torchvision.transforms.Compose(
+                        [torchvision.transforms.RandomHorizontalFlip(),
+                         torchvision.transforms.RandomAffine(0),
+                         torchvision.transforms.ToTensor(),
+                         torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                                          (0.2023, 0.1994, 0.201))])
+    else:
+        transforms = torchvision.transforms.Compose([
+                         torchvision.transforms.ToTensor(),
+                         torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                                          (0.2023, 0.1994, 0.201))])
+        
+    is_train = (split == 'train')
+    dataset = torchvision.datasets.CIFAR10(root='/tmp/cifar/',
+                                           download=True,
+                                           train=is_train,
+                                           transform=transforms)
+
+    loader = torch.utils.data.DataLoader(dataset=dataset,
+                                         shuffle=shuffle,
+                                         batch_size=batch_size,
+                                         num_workers=num_workers)
     
+    return loader
+
 
 def parseArgs():
 
@@ -81,7 +110,7 @@ def parseArgs():
     
     # Seed
     parser.add_argument("--seed", type=int, default=42,
-                        dest="seed", help='seed')
+                        dest="seed", help='random seed')
     
     # Dataset
     parser.add_argument("--dataset", type=str, default='cifar2',
@@ -104,44 +133,38 @@ def parseArgs():
                         dest="center_crop", help='center crop the dataset')
     parser.add_argument("--random-flip", action="store_true", default=False,
                         dest="random_flip", help='random flip the dataset')
-    parser.add_argument("--batch-size", type=int, default=64, 
-                        dest="batch_size", help="Batch size (per device) for the training dataloader.")
+    parser.add_argument("--batch-size", type=int, default=16, 
+                        dest="batch_size", help="Batch size (per device) for the dataloader.")
     parser.add_argument("--dataloader-num-workers", type=int, default=0,
                         dest="dataloader_num_workers", help="The number of subprocesses to use for data loading. 0 means that the data will be loaded in the main process.")
     
     # Model
-    parser.add_argument("--model", type=str, default="resnet9",
-                        dest="model", help="Model to use")
+    parser.add_argument("--model", type=str, default='resnet9',
+                        dest="model", help='model to train on')
     parser.add_argument("--model-dir", type=str, default='./saved/models',
                         dest="model_dir", help='model directory')
     parser.add_argument("--model-name", type=str, default='model_10.pth',
-                        dest="model_name", help='model name')               
+                        dest="model_name", help='model name')
     
-    # Save
-    parser.add_argument("--save-dir", type=str, default='./saved',
+    # Save Dir
+    parser.add_argument("--save-dir", type=str, default='./saved/grad',
                         dest="save_dir", help='save directory')
-
+    
     return parser.parse_args()
 
 
 def main(args):
-
     # seed
     set_seed(args.seed)
 
     # device
+    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # device = torch.device("cpu")
 
-    # load dataset
     if args.dataset_split == 'train':
-        loader = dataset_loader[args.dataset].get_train_loader(
-            args,
-        )
+        loader = get_dataloader(batch_size=args.batch_size, split='train')
     else:
-        loader = dataset_loader[args.dataset].get_test_loader(
-            args,
-        )
+        loader = get_dataloader(batch_size=args.batch_size, split='val', augment=False)
 
     # load model
     num_classes = dataset_num_classes[args.dataset]
@@ -152,23 +175,44 @@ def main(args):
     model.to(device)
     model.eval()
 
-    batch_error_list = []
+    # get params and buffers
+    func_weights = dict(model.named_parameters())
+    func_buffers = dict(model.named_buffers())
+
+    # normalize factor
+    normalize_factor = torch.sqrt(
+        torch.tensor(count_parameters(model), dtype=torch.float32)
+    )
+
+    # initialize save np array
+    if args.dataset_split == 'train':
+        dataset_size = dataset_len[args.dataset]
+    else:
+        dataset_size = testset_len[args.dataset]
+    filename = os.path.join(args.save_dir, f'error.npy')
+    loss_grads_store = np.memmap(filename, 
+                             dtype=np.float32, 
+                             mode='w+', 
+                             shape=(dataset_size,1))
+
+    index_start = 0
 
     for batch_idx, batch in enumerate(loader):
         print(f"{batch_idx}/{len(loader)}")
-        data, labels = batch["input"].to(device), batch["label"].to(device)
-        
-        outputs = model(data)
-        prob = F.softmax(outputs, dim=-1)
-        conf, _ = torch.max(prob, dim=-1)
-        
-        error = 1 - conf
-        batch_error_list.append(error.detach().cpu().numpy())
 
-    save_name = f"{args.dataset_split}_error.pkl"
-    with open(os.path.join(args.save_dir, save_name), "wb") as f:
-        pickle.dump(batch_error_list, f)
+        index_end = index_start + len(batch[0])
 
-if __name__ == "__main__":
+        # inputs, labels = batch["input"].to(device), batch["label"].to(device)
+        inputs, labels = batch[0].to(device), batch[1].to(device)
+
+        loss_grads = get_out_to_loss_grad(model, func_weights, func_buffers, inputs, labels)
+
+        # save gradient
+        loss_grads_store[index_start:index_end] = loss_grads.cpu().clone().detach().numpy()
+
+        index_start = index_end
+
+
+if __name__ == '__main__':
     args = parseArgs()
     main(args)
