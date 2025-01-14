@@ -2,17 +2,24 @@ import argparse
 import numpy as np
 import random
 import os
+from typing import Iterable
+from tqdm import tqdm
+
 
 import torch
 from torch import optim
+from torch import Tensor
+from torch.nn import Module
 from torch.nn import functional as F
 from torch.func import functional_call, vmap, grad 
-
-from trak.projectors import ProjectionType, AbstractProjector, CudaProjector
+import torchvision
+from trak.projectors import ProjectionType, CudaProjector
 
 from Tools.Data import cifar2, cifar10, imagenet
 from Tools.Models.resnet import resnet18, resnet34
 from Tools.Models.resnet9 import resnet9
+
+from trak.traker import TRAKer
 
 
 dataset_num_classes = {
@@ -25,6 +32,12 @@ dataset_len = {
     'cifar2': 10000,
     'cifar10': 50000,
     'imagenet': 1281167
+}
+
+testset_len = {
+    'cifar2': 2000,
+    'cifar10': 10000,
+    'imagenet': 50000
 }
 
 dataset_loader = {
@@ -49,22 +62,54 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad) 
 
 
-def vectorize_and_ignore_buffers(g, params_dict=None):
-    """
-    gradients are given as a tuple :code:`(grad_w0, grad_w1, ... grad_wp)` where
-    :code:`p` is the number of weight matrices. each :code:`grad_wi` has shape
-    :code:`[batch_size, ...]` this function flattens :code:`g` to have shape
-    :code:`[batch_size, num_params]`.
-    """
-    batch_size = len(g[0])
-    out = []
-    if params_dict is not None:
-        for b in range(batch_size):
-            out.append(torch.cat([x[b].flatten() for i, x in enumerate(g) if is_not_buffer(i, params_dict)]))
+def output_function(
+        model: Module,
+        weights: Iterable[Tensor],
+        buffers: Iterable[Tensor],
+        image: Tensor,
+        label: Tensor,
+    ) -> Tensor:
+        logits = torch.func.functional_call(model, (weights, buffers), image.unsqueeze(0))
+        bindex = torch.arange(logits.shape[0]).to(logits.device, non_blocking=False)
+        logits_correct = logits[bindex, label.unsqueeze(0)]
+
+        cloned_logits = logits.clone()
+        # remove the logits of the correct labels from the sum
+        # in logsumexp by setting to -torch.inf
+        cloned_logits[bindex, label.unsqueeze(0)] = torch.tensor(
+            -torch.inf, device=logits.device, dtype=logits.dtype
+        )
+
+        margins = logits_correct - cloned_logits.logsumexp(dim=-1)
+        return margins.sum()
+
+
+def get_dataloader(batch_size=256, num_workers=8, split='train', shuffle=False, augment=True):
+    if augment:
+        transforms = torchvision.transforms.Compose(
+                        [torchvision.transforms.RandomHorizontalFlip(),
+                         torchvision.transforms.RandomAffine(0),
+                         torchvision.transforms.ToTensor(),
+                         torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                                          (0.2023, 0.1994, 0.201))])
     else:
-        for b in range(batch_size):
-            out.append(torch.cat([x[b].flatten() for x in g]))
-    return torch.stack(out)
+        transforms = torchvision.transforms.Compose([
+                         torchvision.transforms.ToTensor(),
+                         torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                                          (0.2023, 0.1994, 0.201))])
+        
+    is_train = (split == 'train')
+    dataset = torchvision.datasets.CIFAR10(root='/tmp/cifar/',
+                                           download=True,
+                                           train=is_train,
+                                           transform=transforms)
+
+    loader = torch.utils.data.DataLoader(dataset=dataset,
+                                         shuffle=shuffle,
+                                         batch_size=batch_size,
+                                         num_workers=num_workers)
+    
+    return loader
 
 
 def parseArgs():
@@ -123,22 +168,17 @@ def parseArgs():
 
 
 def main(args):
-
     # seed
     set_seed(args.seed)
 
     # device
+    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # load dataset
     if args.dataset_split == 'train':
-        loader = dataset_loader[args.dataset].get_train_loader(
-            args,
-        )
+        loader = get_dataloader(batch_size=args.batch_size, split='train')
     else:
-        loader = dataset_loader[args.dataset].get_test_loader(
-            args,
-        )
+        loader = get_dataloader(batch_size=args.batch_size, split='val', augment=False)
 
     # load model
     num_classes = dataset_num_classes[args.dataset]
@@ -150,77 +190,71 @@ def main(args):
     model.eval()
 
     # get params and buffers
-    params = {k: v.detach() for k, v in model.named_parameters() if v.requires_grad==True}
-    buffers = {k: v.detach() for k, v in model.named_buffers() if v.requires_grad==True}
+    func_weights = dict(model.named_parameters())
+    func_buffers = dict(model.named_buffers())
+
+    # normalize factor
+    normalize_factor = torch.sqrt(
+        torch.tensor(count_parameters(model), dtype=torch.float32)
+    )
 
     # initialize projector
     projector = CudaProjector(
         grad_dim=count_parameters(model), 
         proj_dim=args.dim,
-        seed=args.seed, 
-        proj_type=ProjectionType.normal,
+        seed=0, 
+        proj_type=ProjectionType.rademacher,
+        max_batch_size=32,
+        dtype=torch.float16,
         device=device,
-    )
+    )    
 
-    # Initialize save np array
+    # initialize save np array
     if args.dataset_split == 'train':
-        filename = os.path.join('{}/train-grad-{}-{}-{}.npy'.format(
-            args.save_dir, args.model, args.model_name, args.dim
-        ))
+        filename = os.path.join(args.save_dir, f'train-{args.dim}.npy')
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        dstore_keys = np.memmap(filename, 
+            dtype=np.float16, 
+            mode='w+', 
+            shape=(dataset_len[args.dataset], args.dim)) 
     else:
-        filename = os.path.join('{}/test-grad-{}-{}-{}.npy'.format(
-            args.save_dir, args.model, args.model_name, args.dim
-        ))
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
+        filename = os.path.join(args.save_dir, f'test-{args.dim}.npy')
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        dstore_keys = np.memmap(filename, 
+            dtype=np.float16, 
+            mode='w+', 
+            shape=(testset_len[args.dataset], args.dim)) 
 
-    # TODO: test store shape not defined
-    dstore_keys = np.memmap(filename, 
-                            dtype=np.float32, 
-                            mode='w+', 
-                            shape=(dataset_len[args.dataset], args.dim)) 
-    
-    
-    # model evaluation for gradient computation
-    # define model output function
-    def compute_f(params, buffers, input, label):
-        input = input.unsqueeze(0)
-        label = label.unsqueeze(0)
-        
-        predictions = functional_call(model, (params, buffers), args=(input,))
-        prob = F.softmax(predictions, dim=-1)
-        ####
-        conf = (prob * label).sum(dim=-1)  # 点乘后求和,得到对应类别的概率
-        f = torch.log(conf/(1-conf))
-        f = f.mean()
-        ####
-        return f
-
-    ft_compute_grad = grad(compute_f)
-    ft_compute_sample_grad = vmap(
-        ft_compute_grad, 
-        in_dims=(None, None, 0, 0)
-    )
+    index_start = 0
 
     for batch_idx, batch in enumerate(loader):
-        print("batch_idx: ", batch_idx)
-        inputs, labels = batch["input"].to(device), batch["label"].to(device)
-        labels_one_hot = torch.zeros(labels.size(0), num_classes, device=labels.device)
-        labels_one_hot.scatter_(1, labels.unsqueeze(1).long(), 1)
+        print(f"{batch_idx}/{len(loader)}")
 
-        # compute gradient
-        ft_per_sample_grads = ft_compute_sample_grad(params, buffers, inputs, labels_one_hot)
-        ft_per_sample_grads = vectorize_and_ignore_buffers(list(ft_per_sample_grads.values()))
+        index_end = index_start + len(batch[0])
 
-        # project gradient
-        ft_per_sample_grads = projector.project(ft_per_sample_grads, model_id=0)
+        # inputs, labels = batch["input"].to(device), batch["label"].to(device)
+        inputs, labels = batch[0].to(device), batch[1].to(device)
+
+        # taking the gradient wrt weights (second argument of get_output, hence argnums=1)
+        grads_loss = torch.func.grad(
+            output_function, has_aux=False, argnums=1
+        )
+
+        # map over batch dimensions (hence 0 for each batch dimension, and None for model params)
+        grads = torch.func.vmap(
+            grads_loss,
+            in_dims=(None, None, None, *([0] * len(batch))),
+            randomness="different",
+        )(model, func_weights, func_buffers, inputs, labels)
+
+        project_grad = projector.project(grads, model_id=0)
+        normalize_grad = project_grad / normalize_factor
 
         # save gradient
-        index_start = batch_idx * args.batch_size
-        index_end = index_start + args.batch_size
-        while (np.abs(dstore_keys[index_start:index_end, 0:32]).sum()==0):
-            dstore_keys[index_start:index_end] = ft_per_sample_grads.detach().cpu().numpy()
+        dstore_keys[index_start:index_end] = normalize_grad.to(torch.float16).cpu().clone().detach().numpy()
+        index_start = index_end
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     args = parseArgs()
     main(args)
