@@ -25,7 +25,7 @@ do
     for index in `seq $start $end`
     do
         echo "index: $index"
-        CUDA_VISIBLE_DEVICES=$gpu_ids python eval.py \
+        CUDA_VISIBLE_DEVICES=$gpu_ids python 04_eval.py \
             --seed $seed \
             --load-dataset \
             --dataset-dir ../Dataset/$ori_dataset \
