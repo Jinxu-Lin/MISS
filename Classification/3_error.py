@@ -165,7 +165,8 @@ def main(args):
         dataset_size = dataset_len[args.dataset]
     else:
         dataset_size = testset_len[args.dataset]
-    filename = os.path.join(args.save_dir, f'error.npy')
+    filename = os.path.join(args.save_dir, f'error-{args.dataset_split}.npy')
+    os.makedirs(args.save_dir, exist_ok=True)
     loss_grads_store = np.memmap(filename, 
                              dtype=np.float32, 
                              mode='w+', 
