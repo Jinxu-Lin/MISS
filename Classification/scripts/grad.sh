@@ -17,7 +17,7 @@ elif [ "$dataset" = "imagenet" ]; then
     ori_dataset="IMAGENET"
 fi
 
-CUDA_VISIBLE_DEVICES=$gpu_ids python grad1.py \
+CUDA_VISIBLE_DEVICES=$gpu_ids python 02_grad.py \
     --seed $seed \
     --load-dataset \
     --dataset-dir ../Dataset/$ori_dataset \
