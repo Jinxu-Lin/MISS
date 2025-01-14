@@ -206,7 +206,7 @@ def main(args):
     for batch_idx, batch in enumerate(loader):
         print(f"{batch_idx}/{len(loader)}")
 
-        index_end = index_start + len(batch[0])
+        index_end = index_start + len(batch["input"])
 
         inputs, labels = batch["input"].to(device), batch["label"].to(device)
 
