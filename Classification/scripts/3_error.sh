@@ -30,4 +30,4 @@ CUDA_VISIBLE_DEVICES=$gpu_ids python 3_error.py \
     --model $model \
     --model-dir ./saved/models/$dataset/origin/seed-$seed \
     --model-name model_23.pth \
-    --save-dir ./saved/models/$dataset/error/seed-$seed
+    --save-dir ./saved/error/$dataset/seed-$seed
